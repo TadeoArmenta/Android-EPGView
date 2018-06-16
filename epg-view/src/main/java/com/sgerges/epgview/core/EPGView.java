@@ -495,10 +495,13 @@ public class EPGView extends AbsLayoutContainer {
             view = mAdapter.getOverlayViewForPrevPrograms(mLayout.getLayoutParams().prevProgramsOverlayColor, convertView, this);
         } else if(freeflowItem.type == EPGLayout.TYPE_TIME_BAR_NOW_HEAD) {
             view = mAdapter.getViewForNowLineHead(convertView, this);
-            if(view.getLayoutParams().width != 0 && view.getLayoutParams().height != 0) {
-                freeflowItem.frame.right = freeflowItem.frame.left + view.getLayoutParams().width;
-                freeflowItem.frame.bottom = freeflowItem.frame.top + view.getLayoutParams().height;
-                mLayout.forceUpdateFrame(freeflowItem.data, freeflowItem.frame);
+            LayoutParams params = view.getLayoutParams();
+            if(params != null) {
+                if(params.width != 0 && params.height != 0) {
+                    freeflowItem.frame.right = freeflowItem.frame.left + view.getLayoutParams().width;
+                    freeflowItem.frame.bottom = freeflowItem.frame.top + view.getLayoutParams().height;
+                    mLayout.forceUpdateFrame(freeflowItem.data, freeflowItem.frame);
+                }
             }
         } else if(freeflowItem.type == EPGLayout.TYPE_NOW_LINE) {
             view = new View(getContext());
@@ -597,6 +600,7 @@ public class EPGView extends AbsLayoutContainer {
             viewBottom = frame.bottom - viewPortY;
         }
 
+        if(view == null) return;
         view.layout(viewLeft, viewTop, viewRight, viewBottom);
     }
 
@@ -1474,7 +1478,10 @@ public class EPGView extends AbsLayoutContainer {
 
         Collections.sort(allVisible, zIndexComparator);
         for (FreeFlowItem freeFlowItem : allVisible) {
-            freeFlowItem.view.bringToFront();
+            View view = freeFlowItem.view;
+            if(view != null){
+                view.bringToFront();
+            }
         }
 
         for (FreeFlowItem freeflowItem : changeSet.removed) {
@@ -1566,12 +1573,16 @@ public class EPGView extends AbsLayoutContainer {
 
     protected void returnItemToPoolIfNeeded(FreeFlowItem freeflowItem) {
         View v = freeflowItem.view;
-        v.setTranslationX(0);
-        v.setTranslationY(0);
-        v.setRotation(0);
+
+        if(v != null) {
+            v.setTranslationX(0);
+            v.setTranslationY(0);
+            v.setRotation(0);
 //        v.setScaleX(isRTL ? -1f : 1f);
 //        v.setScaleY(1f);
-        v.setAlpha(1);
+            v.setAlpha(1);
+        }
+
         viewpool.returnViewToPool(v, freeflowItem.type);
     }
 
