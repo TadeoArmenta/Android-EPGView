@@ -311,6 +311,8 @@ public class EPGView extends AbsLayoutContainer {
             mLayout.setDimensions(afterWidth, afterHeight);
         }
 
+        setMeasuredDimension(widthMeasureSpec, heightMeasureSpec);
+
         if (mLayout == null || mAdapter == null) {
             logLifecycleEvent("Nothing to do: returning");
             return;
