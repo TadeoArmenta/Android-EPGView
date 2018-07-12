@@ -1,5 +1,7 @@
 package com.sgerges.epgview.core;
 
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -93,10 +95,10 @@ public abstract class EPGAdapter<C, P> {
     // Abstract Methods
     ///////////////////////////////////////////////////////////////////////////
 
-    protected abstract View getViewForChannel(C channel, View convertView, ViewGroup parent);
-    protected abstract View getViewForProgram(P program, View convertView, ViewGroup parent);
-    protected abstract View getViewForTimeCell(Long time, View convertView, ViewGroup parent);
-    protected abstract View getViewForNowLineHead(View convertView, ViewGroup parent);
+    protected abstract View getViewForChannel(@NonNull C channel, @Nullable View convertView, @NonNull ViewGroup parent);
+    protected abstract View getViewForProgram(@NonNull P program, @Nullable View convertView, @NonNull ViewGroup parent);
+    protected abstract View getViewForTimeCell(@NonNull Long time,@Nullable  View convertView, @NonNull ViewGroup parent);
+    protected abstract View getViewForNowLineHead(@Nullable View convertView, @NonNull ViewGroup parent);
 
     public abstract long getStartTimeForProgramAt(int section, int position);
     public abstract long getEndTimeForProgramAt(int section, int position);

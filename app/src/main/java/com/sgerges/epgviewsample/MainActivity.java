@@ -1,6 +1,7 @@
 package com.sgerges.epgviewsample;
 
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -89,7 +90,7 @@ public class MainActivity extends AppCompatActivity {
         DateFormat dateFormat = new SimpleDateFormat("hh:mm a");
 
         @Override
-        protected View getViewForChannel(ChannelData channel, View convertView, ViewGroup parent) {
+        protected View getViewForChannel(@NonNull ChannelData channel, View convertView, @NonNull ViewGroup parent) {
             TextView tv;
             if (convertView != null) {
                 tv = (TextView) convertView;
@@ -107,7 +108,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        protected View getViewForProgram(ProgramData program, View convertView, ViewGroup parent) {
+        protected View getViewForProgram(@NonNull ProgramData program, View convertView, @NonNull ViewGroup parent) {
             TextView tv;
             if (convertView != null) {
                 tv = (TextView) convertView;
@@ -125,7 +126,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        public View getViewForTimeCell(Long time, View convertView, ViewGroup parent) {
+        public View getViewForTimeCell(@NonNull Long time, View convertView, @NonNull ViewGroup parent) {
             TextView tv;
             if (convertView != null) {
                 tv = (TextView) convertView;
@@ -145,7 +146,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        protected View getViewForNowLineHead(View convertView, ViewGroup parent) {
+        protected View getViewForNowLineHead(View convertView, @NonNull ViewGroup parent) {
 
             if(convertView == null) {
                 convertView = LayoutInflater.from(parent.getContext()).inflate(R.layout.now_line_head, parent, false);
