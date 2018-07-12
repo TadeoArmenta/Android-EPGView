@@ -497,14 +497,9 @@ public class EPGView extends AbsLayoutContainer {
             view = mAdapter.getOverlayViewForPrevPrograms(mLayout.getLayoutParams().prevProgramsOverlayColor, convertView, this);
         } else if(freeflowItem.type == EPGLayout.TYPE_TIME_BAR_NOW_HEAD) {
             view = mAdapter.getViewForNowLineHead(convertView, this);
-            LayoutParams params = view.getLayoutParams();
-            if(params != null) {
-                if(params.width != 0 && params.height != 0) {
-                    freeflowItem.frame.right = freeflowItem.frame.left + view.getLayoutParams().width;
-                    freeflowItem.frame.bottom = freeflowItem.frame.top + view.getLayoutParams().height;
-                    mLayout.forceUpdateFrame(freeflowItem.data, freeflowItem.frame);
-                }
-            }
+            freeflowItem.frame.right = freeflowItem.frame.left + view.getMeasuredWidth();
+            freeflowItem.frame.bottom = freeflowItem.frame.top + view.getMeasuredHeight();
+            mLayout.forceUpdateFrame(freeflowItem.data, freeflowItem.frame);
         } else if(freeflowItem.type == EPGLayout.TYPE_NOW_LINE) {
             view = new View(getContext());
             view.setBackgroundColor(mLayout.getLayoutParams().nowLineColor);
