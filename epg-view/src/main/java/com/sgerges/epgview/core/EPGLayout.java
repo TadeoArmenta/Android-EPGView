@@ -24,7 +24,7 @@ import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Map;
 
-public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
+public class EPGLayout extends FreeFlowLayoutBase {
 
     public static final int TYPE_CHANNEL = 0;
     public static final int TYPE_CELL = 1;
@@ -35,7 +35,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
 
     private static final String TAG = "EPGLayout";
 
-    private Map<Object, FreeFlowItem> proxies = new HashMap<>();
+    private final Map<Long, FreeFlowItem> proxies = new HashMap<>();
 
     private EPGAdapter itemsAdapter;
 
@@ -58,7 +58,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
     @Override
     public void setLayoutParams(FreeFlowLayoutParams params) {
         if (params instanceof EPGLayoutParams)
-            this.layoutParams = (EPGLayoutParams) params;
+            layoutParams = (EPGLayoutParams) params;
         else
             throw new IllegalArgumentException("EPGLayout can only use EPGLayoutParams");
     }
@@ -67,6 +67,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
         return layoutParams;
     }
 
+    @Override
     public void prepareLayout() {
 
         proxies.clear();
@@ -86,14 +87,14 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
             nowLineItem.type = TYPE_NOW_LINE;
             nowLineItem.zIndex = 1;
             nowLineItem.data = "NOW_LINE";
-            proxies.put("NOW_LINE", nowLineItem);
+            proxies.put((long) TYPE_NOW_LINE, nowLineItem);
 
             FreeFlowItem nowHeadItem = new FreeFlowItem();
             nowHeadItem.frame = prepareNowHeadFrame();
             nowHeadItem.type = TYPE_TIME_BAR_NOW_HEAD;
             nowHeadItem.zIndex = 4;
             nowHeadItem.data = "NOW_HEAD";
-            proxies.put("NOW_HEAD", nowHeadItem);
+            proxies.put((long) TYPE_TIME_BAR_NOW_HEAD, nowHeadItem);
 
             if (layoutParams.showPrevProgramsOverlay) {
                 FreeFlowItem prevOverlayItem = new FreeFlowItem();
@@ -101,7 +102,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
                 prevOverlayItem.type = TYPE_PREV_PROGRAMS_OVERLAY;
                 prevOverlayItem.zIndex = 1;
                 prevOverlayItem.data = "PREV_OVERLAY";
-                proxies.put("PREV_OVERLAY", prevOverlayItem);
+                proxies.put((long) TYPE_PREV_PROGRAMS_OVERLAY, prevOverlayItem);
             }
         }
 
@@ -116,7 +117,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
         currentTime.set(Calendar.SECOND, 0);
         currentTime.set(Calendar.MILLISECOND, 0);
 
-        while (currentTime.getTimeInMillis() - (30 * DateUtils.MINUTE_IN_MILLIS) < itemsAdapter.getViewEndTime()) {
+        while (currentTime.getTimeInMillis() - 30 * DateUtils.MINUTE_IN_MILLIS < itemsAdapter.getViewEndTime()) {
             FreeFlowItem timeCell = new FreeFlowItem();
             timeCell.type = TYPE_TIME_BAR;
             timeCell.zIndex = 3;
@@ -125,8 +126,8 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
             // to achieve that, the full cell will be 15 min before, 15 min after
             int timeDiffMin = (int) ((currentTime.getTimeInMillis() - viewStartTime) / DateUtils.MINUTE_IN_MILLIS) - 15;
             Rect timeCellFrame = new Rect();
-            timeCellFrame.left = programsStart + (timeDiffMin * layoutParams.minuteWidth);
-            timeCellFrame.right = timeCellFrame.left + (30 * layoutParams.minuteWidth);//cell width is always 30 mins
+            timeCellFrame.left = programsStart + timeDiffMin * layoutParams.minuteWidth;
+            timeCellFrame.right = timeCellFrame.left + 30 * layoutParams.minuteWidth;//cell width is always 30 mins
             timeCellFrame.top = 0;
             timeCellFrame.bottom = timeCellFrame.top + layoutParams.timeLineHeight;
 
@@ -155,14 +156,14 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
                 Rect hframe = new Rect();
                 hframe.left = 0;
                 hframe.right = layoutParams.channelCellWidth;
-                hframe.top = gridTop + (sectionIndex * layoutParams.channelRowHeight);
+                hframe.top = gridTop + sectionIndex * layoutParams.channelRowHeight;
                 hframe.bottom = hframe.top + layoutParams.channelRowHeight;
 
                 header.frame = hframe;
                 header.data = section.getHeaderData();
                 header.type = TYPE_CHANNEL;
                 header.clickable = true;
-                proxies.put(header.data, header);
+                proxies.put(itemsAdapter.getItemId(sectionIndex, -1), header);
             }
 
             //========= Programs Rows
@@ -177,7 +178,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
                 frame.left = programsStart + detectProgramLeft(sectionIndex, programIndex);
                 frame.right = programsStart + detectProgramRight(sectionIndex, programIndex);
 
-                frame.top = gridTop + (sectionIndex * layoutParams.channelRowHeight);
+                frame.top = gridTop + sectionIndex * layoutParams.channelRowHeight;
                 frame.bottom = frame.top + layoutParams.channelRowHeight;
 
                 int programEnd = frame.right;
@@ -186,7 +187,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
                 descriptor.data = section.getDataAtIndex(programIndex);
                 descriptor.zIndex = 0;
                 descriptor.clickable = true;
-                proxies.put(descriptor.data, descriptor);
+                proxies.put(itemsAdapter.getItemId(sectionIndex, programIndex), descriptor);
 
                 descriptor.type = TYPE_CELL;
 
@@ -236,7 +237,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
     private int detectNowLeft() {
 
         long viewStartTime = itemsAdapter.getViewStartTime();
-        return (int) (((System.currentTimeMillis() - viewStartTime) / DateUtils.MINUTE_IN_MILLIS) * layoutParams.minuteWidth);
+        return (int) ((System.currentTimeMillis() - viewStartTime) / DateUtils.MINUTE_IN_MILLIS * layoutParams.minuteWidth);
     }
 
     private int detectProgramLeft(int section, int index) {
@@ -246,7 +247,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
         if (programStartTime < viewStartTime) {
             return 0;
         } else {
-            return (int) (((programStartTime - viewStartTime) / DateUtils.MINUTE_IN_MILLIS) * layoutParams.minuteWidth);
+            return (int) ((programStartTime - viewStartTime) / DateUtils.MINUTE_IN_MILLIS * layoutParams.minuteWidth);
         }
     }
 
@@ -260,7 +261,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
             programEnd = viewEndTime;
         }
 
-        return (int) (((programEnd - viewStartTime) / DateUtils.MINUTE_IN_MILLIS) * layoutParams.minuteWidth);
+        return (int) ((programEnd - viewStartTime) / DateUtils.MINUTE_IN_MILLIS * layoutParams.minuteWidth);
     }
 
     /**
@@ -272,15 +273,15 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
      * {@inheritDoc}
      */
     @Override
-    public Map<Object, FreeFlowItem> getItemProxies(int viewPortLeft, int viewPortTop) {
-        HashMap<Object, FreeFlowItem> desc = new HashMap<>();
+    public Map<Long, FreeFlowItem> getItemProxies(int viewPortLeft, int viewPortTop) {
+        HashMap<Long, FreeFlowItem> desc = new HashMap<>();
         for (FreeFlowItem fd : proxies.values()) {
 
             if (fd.type == TYPE_CHANNEL) {
                 //in case of channel cell only check visibility for Y index
                 //since in X index it will be always visible
                 if (fd.frame.bottom > viewPortTop && fd.frame.top < viewPortTop + height) {
-                    desc.put(fd.data, fd);
+                    desc.put(itemsAdapter.getItemId(fd.itemSection, -1), fd);
                 }
 //            } else if(fd.type == TYPE_PREV_PROGRAMS_OVERLAY) {
 //                if (fd.frame.right > viewPortLeft && fd.frame.left < viewPortLeft + width) {
@@ -290,13 +291,13 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
                 //in case of Time bar cell only check visibility for X index
                 //since in Y index it will be always visible on top
                 if (fd.frame.right > viewPortLeft && fd.frame.left < viewPortLeft + width) {
-                    desc.put(fd.data, fd);
+                    desc.put((long) TYPE_TIME_BAR_NOW_HEAD, fd);
                 }
             } else if (fd.type == TYPE_TIME_BAR) {
                 //in case of Time bar cell only check visibility for X index
                 //since in Y index it will be always visible on top
                 if (fd.frame.right > viewPortLeft && fd.frame.left < viewPortLeft + width) {
-                    desc.put(fd.data, fd);
+                    desc.put((long) fd.data, fd);
                 }
             } else {
                 if (fd.frame.bottom > viewPortTop
@@ -304,7 +305,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
                         && fd.frame.right > viewPortLeft
                         && fd.frame.left < viewPortLeft + width) {
 
-                    desc.put(fd.data, fd);
+                    desc.put(itemsAdapter.getItemId(fd.itemSection, fd.itemIndex), fd);
                 }
             }
         }
@@ -358,7 +359,7 @@ public class EPGLayout extends FreeFlowLayoutBase implements FreeFlowLayout {
         if (fd == null) {
             return 0;
         }
-        return (fd.frame.top + fd.frame.height());
+        return fd.frame.top + fd.frame.height();
     }
 
     @Override

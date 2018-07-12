@@ -68,7 +68,7 @@ public class EPGView extends AbsLayoutContainer {
 
     // Not used yet, but we'll probably need to
     // prevent layout in <code>layout()</code> method
-    private boolean preventLayout = false;
+    private final boolean preventLayout = false;
 
     protected EPGAdapter mAdapter;
     protected EPGLayout mLayout;
@@ -115,7 +115,7 @@ public class EPGView extends AbsLayoutContainer {
 
     protected EdgeEffect mLeftEdge, mRightEdge, mTopEdge, mBottomEdge;
 
-    private ArrayList<OnScrollListener> scrollListeners = new ArrayList<>();
+    private final ArrayList<OnScrollListener> scrollListeners = new ArrayList<>();
 
     // This flag controls whether onTap/onLongPress/onTouch trigger
     // the ActionMode
@@ -293,6 +293,85 @@ public class EPGView extends AbsLayoutContainer {
         setScaleX(isRTL ? -1f : 1f);
     }
 
+    private final Runnable flingRunnable = new Runnable() {
+
+        @Override
+        public void run() {
+            if (scroller.isFinished()) {
+                mTouchMode = TOUCH_MODE_REST;
+
+                if (mOnTouchModeChangedListener != null) {
+                    mOnTouchModeChangedListener.onTouchModeChanged(mTouchMode);
+                }
+
+                invokeOnItemScrollListeners();
+                return;
+            }
+            boolean more = scroller.computeScrollOffset();
+            if (mEdgeEffectsEnabled) {
+                checkEdgeEffectDuringScroll();
+            }
+            if (mLayout.horizontalScrollEnabled()) {
+                viewPortX = scroller.getCurrX();
+            }
+            if (mLayout.verticalScrollEnabled()) {
+                viewPortY = scroller.getCurrY();
+            }
+            moveViewport(true);
+            if (more) {
+                post(flingRunnable);
+            }
+        }
+    };
+
+    protected boolean dataSetChanged = false;
+
+    /**
+     * Notifies the attached observers that the underlying data has been changed
+     * and any View reflecting the data set should refresh itself.
+     */
+    public void notifyDataSetChanged() {
+        dataSetChanged = true;
+        markAdapterDirty = true;
+        markLayoutDirty = true;
+
+        requestLayout();
+
+        post(new Runnable() {
+            @Override
+            public void run() {
+
+                moveViewportBy(2, 0, false);
+            }
+        });
+    }
+
+    /**
+     * @deprecated Use dataInvalidated(boolean shouldRecalculateScrollPositions)
+     * instead
+     */
+    public void dataInvalidated() {
+        dataInvalidated(false);
+    }
+
+    /**
+     * Called to inform the Container that the underlying data on the adapter
+     * has changed (more items added/removed). Note that this won't update the
+     * views if the adapter's data objects are the same but the values in those
+     * objects have changed. To update those call {@code notifyDataSetChanged}
+     *
+     * @param shouldRecalculateScrollPositions
+     */
+    public void dataInvalidated(boolean shouldRecalculateScrollPositions) {
+        logLifecycleEvent("Data Invalidated");
+        if (mLayout == null || mAdapter == null) {
+            return;
+        }
+        shouldRecalculateScrollWhenComputingLayout = shouldRecalculateScrollPositions;
+        markAdapterDirty = true;
+        requestLayout();
+    }
+
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         logLifecycleEvent(" onMeasure ");
@@ -307,7 +386,7 @@ public class EPGView extends AbsLayoutContainer {
 
         boolean sizeChanged = beforeWidth != afterWidth || beforeHeight != afterHeight;
 
-        if (this.mLayout != null) {
+        if (mLayout != null) {
             mLayout.setDimensions(afterWidth, afterHeight);
         }
 
@@ -343,52 +422,14 @@ public class EPGView extends AbsLayoutContainer {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
-    protected boolean dataSetChanged = false;
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
 
-    /**
-     * Notifies the attached observers that the underlying data has been changed
-     * and any View reflecting the data set should refresh itself.
-     */
-    public void notifyDataSetChanged() {
-        dataSetChanged = true;
-        markAdapterDirty = true;
-        markLayoutDirty = true;
-
-        requestLayout();
-
-        post(new Runnable() {
-            @Override
-            public void run() {
-
-                moveViewportBy(2,0, false);
-            }
-        });
-    }
-
-    /**
-     * @deprecated Use dataInvalidated(boolean shouldRecalculateScrollPositions)
-     * instead
-     */
-    public void dataInvalidated() {
-        dataInvalidated(false);
-    }
-
-    /**
-     * Called to inform the Container that the underlying data on the adapter
-     * has changed (more items added/removed). Note that this won't update the
-     * views if the adapter's data objects are the same but the values in those
-     * objects have changed. To update those call {@code notifyDataSetChanged}
-     *
-     * @param shouldRecalculateScrollPositions
-     */
-    public void dataInvalidated(boolean shouldRecalculateScrollPositions) {
-        logLifecycleEvent("Data Invalidated");
-        if (mLayout == null || mAdapter == null) {
-            return;
+        if (nowLineTimer != null) {
+            nowLineTimer.cancel();
+            nowLineTimer = null;
         }
-        shouldRecalculateScrollWhenComputingLayout = shouldRecalculateScrollPositions;
-        markAdapterDirty = true;
-        requestLayout();
     }
 
     /**
@@ -409,7 +450,7 @@ public class EPGView extends AbsLayoutContainer {
         if (shouldRecalculateScrollWhenComputingLayout) {
             computeViewPort(mLayout);
         }
-        Map<Object, FreeFlowItem> oldFrames = frames;
+        Map<Long, FreeFlowItem> oldFrames = frames;
 
         frames = new HashMap<>();
         copyFrames(mLayout.getItemProxies(viewPortX, viewPortY), frames);
@@ -422,66 +463,18 @@ public class EPGView extends AbsLayoutContainer {
 
     }
 
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-
-        if(nowLineTimer != null) {
-            nowLineTimer.cancel();
-            nowLineTimer = null;
-        }
-    }
-
     /**
      * Copies the frames from one Map into another. The items are
      * cloned cause we modify the rectangles of the items as they are moving
      */
-    protected void copyFrames(Map<Object, FreeFlowItem> srcFrames,
-                              Map<Object, FreeFlowItem> destFrames) {
-        Iterator<?> it = srcFrames.entrySet().iterator();
+    protected void copyFrames(Map<Long, FreeFlowItem> srcFrames,
+                              Map<Long, FreeFlowItem> destFrames) {
+        Iterator<Map.Entry<Long, FreeFlowItem>> it = srcFrames.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<?, ?> pairs = (Map.Entry<?, ?>) it.next();
-            FreeFlowItem pr = (FreeFlowItem) pairs.getValue();
+            Map.Entry<Long, FreeFlowItem> pairs = it.next();
+            FreeFlowItem pr = pairs.getValue();
             pr = FreeFlowItem.clone(pr);
             destFrames.put(pairs.getKey(), pr);
-        }
-    }
-
-    /**
-     * Adds a view based on the current viewport. If we can get a view from the
-     * ViewPool, we dont need to construct a new instance, else we will based on
-     * the View class returned by the <code>Adapter</code>
-     *
-     * @param freeflowItem <code>FreeFlowItem</code> instance that determines the View
-     *                     being positioned
-     */
-    protected void addAndMeasureViewIfNeeded(final FreeFlowItem freeflowItem) {
-        try {
-            View view;
-            if (freeflowItem.view == null) {
-
-                View convertView = viewpool.getViewFromPool(freeflowItem.type);
-
-                view = getProperViewFromAdapter(freeflowItem, convertView);
-
-                freeflowItem.view = view;
-                prepareViewForAddition(view, freeflowItem);
-
-                addView(view);
-            }
-
-            view = freeflowItem.view;
-
-            int widthSpec = MeasureSpec.makeMeasureSpec(freeflowItem.frame.width(), MeasureSpec.EXACTLY);
-            int heightSpec = MeasureSpec.makeMeasureSpec(freeflowItem.frame.height(), MeasureSpec.EXACTLY);
-            view.measure(widthSpec, heightSpec);
-
-            if(isRTL) {
-                mirrorArabicBackIfTextView(view);
-            }
-        } catch (Throwable throwable) {
-            //FIXME: Sometimes addView throws IllegalStateException: The specified child already has a parent. You must call removeView() on the child's parent first.
-            throwable.printStackTrace();
         }
     }
 
@@ -698,27 +691,41 @@ public class EPGView extends AbsLayoutContainer {
     }
 
     /**
-     * Returns the actual frame for a view as its on stage. The FreeFlowItem's
-     * frame object always represents the position it wants to be in but actual
-     * frame may be different based on animation etc.
+     * Adds a view based on the current viewport. If we can get a view from the
+     * ViewPool, we dont need to construct a new instance, else we will based on
+     * the View class returned by the <code>Adapter</code>
      *
-     * @param freeflowItem The freeflowItem to get the <code>Frame</code> for
-     * @return The Frame for the freeflowItem or null if that view doesn't exist
+     * @param freeflowItem <code>FreeFlowItem</code> instance that determines the View
+     *                     being positioned
      */
-    public Rect getActualFrame(final FreeFlowItem freeflowItem) {
-        View v = freeflowItem.view;
-        if (v == null) {
-            return null;
+    protected void addAndMeasureViewIfNeeded(FreeFlowItem freeflowItem) {
+        try {
+            View view;
+            if (freeflowItem.view == null) {
+
+                View convertView = viewpool.getViewFromPool(freeflowItem.type);
+
+                view = getProperViewFromAdapter(freeflowItem, convertView);
+
+                freeflowItem.view = view;
+                prepareViewForAddition(view, freeflowItem);
+
+                addView(view);
+            }
+
+            view = freeflowItem.view;
+
+            int widthSpec = MeasureSpec.makeMeasureSpec(freeflowItem.frame.width(), MeasureSpec.EXACTLY);
+            int heightSpec = MeasureSpec.makeMeasureSpec(freeflowItem.frame.height(), MeasureSpec.EXACTLY);
+            view.measure(widthSpec, heightSpec);
+
+            if (isRTL) {
+                mirrorArabicBackIfTextView(view);
+            }
+        } catch (Throwable throwable) {
+            //FIXME: Sometimes addView throws IllegalStateException: The specified child already has a parent. You must call removeView() on the child's parent first.
+            throwable.printStackTrace();
         }
-
-        Rect of = new Rect();
-        of.left = (int) (v.getLeft() + v.getTranslationX());
-        of.top = (int) (v.getTop() + v.getTranslationY());
-        of.right = (int) (v.getRight() + v.getTranslationX());
-        of.bottom = (int) (v.getBottom() + v.getTranslationY());
-
-        return of;
-
     }
 
     /**
@@ -751,8 +758,54 @@ public class EPGView extends AbsLayoutContainer {
 
     protected boolean isAnimatingChanges = false;
 
+    /**
+     * Returns the actual frame for a view as its on stage. The FreeFlowItem's
+     * frame object always represents the position it wants to be in but actual
+     * frame may be different based on animation etc.
+     *
+     * @param freeflowItem The freeflowItem to get the <code>Frame</code> for
+     * @return The Frame for the freeflowItem or null if that view doesn't exist
+     */
+    public Rect getActualFrame(FreeFlowItem freeflowItem) {
+        View v = freeflowItem.view;
+        if (v == null) {
+            return null;
+        }
+
+        Rect of = new Rect();
+        of.left = (int) (v.getLeft() + v.getTranslationX());
+        of.top = (int) (v.getTop() + v.getTranslationY());
+        of.right = (int) (v.getRight() + v.getTranslationX());
+        of.bottom = (int) (v.getBottom() + v.getTranslationY());
+
+        return of;
+
+    }
+
+    /**
+     * This method is called by the <code>LayoutAnimator</code> instance once
+     * all transition animations have been completed.
+     *
+     * @param anim The LayoutAnimator instance that reported change complete.
+     */
+    public void onLayoutChangeAnimationsCompleted(FreeFlowLayoutAnimator anim) {
+        // preventLayout = false;
+        isAnimatingChanges = false;
+        logLifecycleEvent("layout change animations complete");
+        for (FreeFlowItem freeflowItem : anim.getChangeSet().getRemoved()) {
+            View v = freeflowItem.view;
+            removeView(v);
+            returnItemToPoolIfNeeded(freeflowItem);
+        }
+
+        dispatchLayoutChangeAnimationsComplete();
+
+        // changeSet = null;
+
+    }
+
     private void animateChanges(LayoutChangeSet changeSet) {
-        logLifecycleEvent("animating changes: " + changeSet.toString());
+        logLifecycleEvent("animating changes: " + changeSet);
         if (changeSet.added.size() == 0 && changeSet.removed.size() == 0
                 && changeSet.moved.size() == 0) {
             return;
@@ -786,35 +839,25 @@ public class EPGView extends AbsLayoutContainer {
 
     }
 
-    /**
-     * This method is called by the <code>LayoutAnimator</code> instance once
-     * all transition animations have been completed.
-     *
-     * @param anim The LayoutAnimator instance that reported change complete.
-     */
-    public void onLayoutChangeAnimationsCompleted(FreeFlowLayoutAnimator anim) {
-        // preventLayout = false;
-        isAnimatingChanges = false;
-        logLifecycleEvent("layout change animations complete");
-        for (FreeFlowItem freeflowItem : anim.getChangeSet().getRemoved()) {
-            View v = freeflowItem.view;
-            removeView(v);
-            returnItemToPoolIfNeeded(freeflowItem);
-        }
-
-        dispatchLayoutChangeAnimationsComplete();
-
-        // changeSet = null;
-
-    }
-
-    public LayoutChangeSet getViewChanges(Map<Object, FreeFlowItem> oldFrames,
-                                          Map<Object, FreeFlowItem> newFrames) {
+    public LayoutChangeSet getViewChanges(Map<Long, FreeFlowItem> oldFrames,
+                                          Map<Long, FreeFlowItem> newFrames) {
         return getViewChanges(oldFrames, newFrames, false);
     }
 
-    public LayoutChangeSet getViewChanges(Map<Object, FreeFlowItem> oldFrames,
-                                          Map<Object, FreeFlowItem> newFrames, boolean moveEvenIfSame) {
+    @Override
+    public void requestLayout() {
+        if (!preventLayout) {
+            /**
+             * Ends up with a call to <code>onMeasure</code> where all the logic
+             * lives
+             */
+            super.requestLayout();
+        }
+
+    }
+
+    public LayoutChangeSet getViewChanges(Map<Long, FreeFlowItem> oldFrames,
+                                          Map<Long, FreeFlowItem> newFrames, boolean moveEvenIfSame) {
 
         // cleanupViews();
         LayoutChangeSet change = new LayoutChangeSet();
@@ -868,43 +911,6 @@ public class EPGView extends AbsLayoutContainer {
         frames = newFrames;
 
         return change;
-    }
-
-    @Override
-    public void requestLayout() {
-        if (!preventLayout) {
-            /**
-             * Ends up with a call to <code>onMeasure</code> where all the logic
-             * lives
-             */
-            super.requestLayout();
-        }
-
-    }
-
-    /**
-     * Sets the adapter for the this CollectionView.All view pools will be
-     * cleared at this point and all views on the stage will be cleared
-     *
-     * @param adapter The {@link EPGAdapter} that will populate this
-     *                Collection
-     */
-    public void setAdapter(EPGAdapter adapter) {
-        if (adapter == mAdapter) {
-            return;
-        }
-        stopScrolling();
-        logLifecycleEvent("setting adapter");
-        markAdapterDirty = true;
-
-        viewPortX = 0;
-        viewPortY = 0;
-        shouldRecalculateScrollWhenComputingLayout = true;
-        this.mAdapter = adapter;
-        if (mLayout != null) {
-            mLayout.setAdapter(mAdapter);
-        }
-        requestLayout();
     }
 
 //    public void notifyDataSetChanged() {
@@ -994,6 +1000,31 @@ public class EPGView extends AbsLayoutContainer {
      */
     protected final int FLYWHEEL_TIMEOUT = 40;
 
+    /**
+     * Sets the adapter for the this CollectionView.All view pools will be
+     * cleared at this point and all views on the stage will be cleared
+     *
+     * @param adapter The {@link EPGAdapter} that will populate this
+     *                Collection
+     */
+    public void setAdapter(EPGAdapter adapter) {
+        if (adapter == mAdapter) {
+            return;
+        }
+        stopScrolling();
+        logLifecycleEvent("setting adapter");
+        markAdapterDirty = true;
+
+        viewPortX = 0;
+        viewPortY = 0;
+        shouldRecalculateScrollWhenComputingLayout = true;
+        mAdapter = adapter;
+        if (mLayout != null) {
+            mLayout.setAdapter(mAdapter);
+        }
+        requestLayout();
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
 
@@ -1007,7 +1038,7 @@ public class EPGView extends AbsLayoutContainer {
         boolean canScroll = false;
 
         if (mLayout.horizontalScrollEnabled()
-                && this.mLayout.getContentWidth() > getWidth()) {
+                && mLayout.getContentWidth() > getWidth()) {
             canScroll = true;
         }
         if (mLayout.verticalScrollEnabled()
@@ -1016,18 +1047,18 @@ public class EPGView extends AbsLayoutContainer {
         }
 
         switch (event.getAction()) {
-            case (MotionEvent.ACTION_DOWN):
+            case MotionEvent.ACTION_DOWN:
                 touchDown(event);
                 break;
-            case (MotionEvent.ACTION_MOVE):
+            case MotionEvent.ACTION_MOVE:
                 if (canScroll) {
                     touchMove(event);
                 }
                 break;
-            case (MotionEvent.ACTION_UP):
+            case MotionEvent.ACTION_UP:
                 touchUp(event);
                 break;
-            case (MotionEvent.ACTION_CANCEL):
+            case MotionEvent.ACTION_CANCEL:
                 touchCancel(event);
                 break;
         }
@@ -1085,7 +1116,7 @@ public class EPGView extends AbsLayoutContainer {
         //without dividing the viewPortX & viewPortY
         //So if the click item has a zIndex more than the clicked program, then consider it clicked
         FreeFlowItem screenEndTouchAt = ViewUtils.getItemAt(frames,
-                (int) (event.getX()),
+                (int) event.getX(),
                 (int) (viewPortY + event.getY()));
 
         if(screenEndTouchAt != null && (beginTouchAt == null || screenEndTouchAt.zIndex > beginTouchAt.zIndex)) {
@@ -1112,6 +1143,21 @@ public class EPGView extends AbsLayoutContainer {
         }
         postDelayed(mPendingCheckForTap, ViewConfiguration.getTapTimeout());
 
+    }
+
+    protected void touchCancel(MotionEvent event) {
+        mTouchMode = TOUCH_MODE_REST;
+
+        if (mOnTouchModeChangedListener != null) {
+            mOnTouchModeChangedListener.onTouchModeChanged(mTouchMode);
+        }
+
+        if (mVelocityTracker != null) {
+            mVelocityTracker.recycle();
+            mVelocityTracker = null;
+        }
+
+        // requestLayout();
     }
 
     protected void touchMove(MotionEvent event) {
@@ -1174,7 +1220,7 @@ public class EPGView extends AbsLayoutContainer {
             }
         }
 
-        if ((mTouchMode == TOUCH_MODE_DOWN || mTouchMode == TOUCH_MODE_REST) && (distance > touchSlop)) {
+        if ((mTouchMode == TOUCH_MODE_DOWN || mTouchMode == TOUCH_MODE_REST) && distance > touchSlop) {
             mTouchMode = TOUCH_MODE_SCROLL;
 
             if (mOnTouchModeChangedListener != null) {
@@ -1195,19 +1241,8 @@ public class EPGView extends AbsLayoutContainer {
         }
     }
 
-    protected void touchCancel(MotionEvent event) {
-        mTouchMode = TOUCH_MODE_REST;
-
-        if (mOnTouchModeChangedListener != null) {
-            mOnTouchModeChangedListener.onTouchModeChanged(mTouchMode);
-        }
-
-        if (mVelocityTracker != null) {
-            mVelocityTracker.recycle();
-            mVelocityTracker = null;
-        }
-
-        // requestLayout();
+    public FreeFlowItem getSelectedFreeFlowItem() {
+        return selectedFreeFlowItem;
     }
 
     protected void touchUp(MotionEvent event) {
@@ -1266,7 +1301,7 @@ public class EPGView extends AbsLayoutContainer {
             //without dividing the viewPortX & viewPortY
             //So if the click item has a zIndex more than the clicked program, then consider it clicked
             FreeFlowItem screenEndTouchAt = ViewUtils.getItemAt(frames,
-                    (int) (event.getX()),
+                    (int) event.getX(),
                     (int) (viewPortY + event.getY()));
 
             if(screenEndTouchAt != null && (endTouchAt == null || screenEndTouchAt.zIndex > endTouchAt.zIndex)) {
@@ -1316,41 +1351,6 @@ public class EPGView extends AbsLayoutContainer {
 
         }
     }
-
-    public FreeFlowItem getSelectedFreeFlowItem() {
-        return selectedFreeFlowItem;
-    }
-
-    private Runnable flingRunnable = new Runnable() {
-
-        @Override
-        public void run() {
-            if (scroller.isFinished()) {
-                mTouchMode = TOUCH_MODE_REST;
-
-                if (mOnTouchModeChangedListener != null) {
-                    mOnTouchModeChangedListener.onTouchModeChanged(mTouchMode);
-                }
-
-                invokeOnItemScrollListeners();
-                return;
-            }
-            boolean more = scroller.computeScrollOffset();
-            if (mEdgeEffectsEnabled) {
-                checkEdgeEffectDuringScroll();
-            }
-            if (mLayout.horizontalScrollEnabled()) {
-                viewPortX = scroller.getCurrX();
-            }
-            if (mLayout.verticalScrollEnabled()) {
-                viewPortY = scroller.getCurrY();
-            }
-            moveViewport(true);
-            if (more) {
-                post(flingRunnable);
-            }
-        }
-    };
 
     protected void checkEdgeEffectDuringScroll() {
         if (mLeftEdge.isFinished() && viewPortX < 0
@@ -1421,7 +1421,7 @@ public class EPGView extends AbsLayoutContainer {
             if (viewPortX < -overFlingDistance) {
                 viewPortX = -overFlingDistance;
             } else if (viewPortX > mScrollableWidth + overFlingDistance) {
-                viewPortX = (mScrollableWidth + overFlingDistance);
+                viewPortX = mScrollableWidth + overFlingDistance;
             }
 
             if (viewPortY < -overFlingDistance) {
@@ -1432,20 +1432,20 @@ public class EPGView extends AbsLayoutContainer {
 
             if (mEdgeEffectsEnabled && overFlingDistance > 0) {
                 if (viewPortX <= 0) {
-                    mLeftEdge.onPull(viewPortX / (-overFlingDistance));
+                    mLeftEdge.onPull(viewPortX / -overFlingDistance);
                 } else if (viewPortX >= mScrollableWidth) {
-                    mRightEdge.onPull((viewPortX - mScrollableWidth) / (-overFlingDistance));
+                    mRightEdge.onPull((viewPortX - mScrollableWidth) / -overFlingDistance);
                 }
 
                 if (viewPortY <= 0) {
-                    mTopEdge.onPull(viewPortY / (-overFlingDistance));
+                    mTopEdge.onPull(viewPortY / -overFlingDistance);
                 } else if (viewPortY >= mScrollableHeight) {
-                    mBottomEdge.onPull((viewPortY - mScrollableHeight) / (-overFlingDistance));
+                    mBottomEdge.onPull((viewPortY - mScrollableHeight) / -overFlingDistance);
                 }
             }
         }
 
-        Map<Object, FreeFlowItem> oldFrames = frames;
+        Map<Long, FreeFlowItem> oldFrames = frames;
         frames = new HashMap<>();
         copyFrames(mLayout.getItemProxies(viewPortX, viewPortY), frames);
 
@@ -1517,11 +1517,11 @@ public class EPGView extends AbsLayoutContainer {
 
         boolean needsInvalidate = false;
 
-        final int height = getMeasuredHeight() - getPaddingTop() - getPaddingBottom();
-        final int width = getMeasuredWidth();
+        int height = getMeasuredHeight() - getPaddingTop() - getPaddingBottom();
+        int width = getMeasuredWidth();
 
         if (!mLeftEdge.isFinished()) {
-            final int restoreCount = canvas.save();
+            int restoreCount = canvas.save();
 
             canvas.rotate(270);
             canvas.translate(-height + getPaddingTop(), 0);// width);
@@ -1532,7 +1532,7 @@ public class EPGView extends AbsLayoutContainer {
         }
 
         if (!mTopEdge.isFinished()) {
-            final int restoreCount = canvas.save();
+            int restoreCount = canvas.save();
 
             mTopEdge.setSize(width, height);
 
@@ -1541,7 +1541,7 @@ public class EPGView extends AbsLayoutContainer {
         }
 
         if (!mRightEdge.isFinished()) {
-            final int restoreCount = canvas.save();
+            int restoreCount = canvas.save();
 
             canvas.rotate(90);
             canvas.translate(0, -width);// width);
@@ -1552,7 +1552,7 @@ public class EPGView extends AbsLayoutContainer {
         }
 
         if (!mBottomEdge.isFinished()) {
-            final int restoreCount = canvas.save();
+            int restoreCount = canvas.save();
 
             canvas.rotate(180);
             canvas.translate(-width + getPaddingTop(), -height);
@@ -1595,7 +1595,7 @@ public class EPGView extends AbsLayoutContainer {
         return layoutAnimator;
     }
 
-    public Map<Object, FreeFlowItem> getFrames() {
+    public Map<Long, FreeFlowItem> getFrames() {
         return frames;
     }
 
@@ -1669,81 +1669,6 @@ public class EPGView extends AbsLayoutContainer {
         mMultiChoiceModeCallback.setWrapped(listener);
     }
 
-    final class CheckForTap implements Runnable {
-        @Override
-        public void run() {
-            if (mTouchMode == TOUCH_MODE_DOWN) {
-                mTouchMode = TOUCH_MODE_TAP;
-
-                if (mOnTouchModeChangedListener != null) {
-                    mOnTouchModeChangedListener.onTouchModeChanged(mTouchMode);
-                }
-
-                if (beginTouchAt != null && beginTouchAt.view != null) {
-                    beginTouchAt.view.setPressed(true);
-                    // setPressed(true);
-                }
-
-                refreshDrawableState();
-                final int longPressTimeout = ViewConfiguration
-                        .getLongPressTimeout();
-                final boolean longClickable = isLongClickable();
-
-                if (longClickable) {
-                    if (mPendingCheckForLongPress == null) {
-                        mPendingCheckForLongPress = new CheckForLongPress();
-                    }
-                    postDelayed(mPendingCheckForLongPress, longPressTimeout);
-                } else {
-                    mTouchMode = TOUCH_MODE_DONE_WAITING;
-
-                    if (mOnTouchModeChangedListener != null) {
-                        mOnTouchModeChangedListener
-                                .onTouchModeChanged(mTouchMode);
-                    }
-                }
-            }
-        }
-    }
-
-    private class CheckForLongPress implements Runnable {
-        @Override
-        public void run() {
-            if (beginTouchAt == null) {
-                // Assuming child that was being long pressed
-                // is no longer valid
-                return;
-            }
-
-            mCheckStates.clear();
-            final View child = beginTouchAt.view;
-            if (child != null) {
-                boolean handled = false;
-                // if (!mDataChanged) {
-                handled = performLongPress();
-                // }
-                if (handled) {
-                    mTouchMode = TOUCH_MODE_REST;
-
-                    if (mOnTouchModeChangedListener != null) {
-                        mOnTouchModeChangedListener
-                                .onTouchModeChanged(mTouchMode);
-                    }
-
-                    // setPressed(false);
-                    child.setPressed(false);
-                } else {
-                    mTouchMode = TOUCH_MODE_DONE_WAITING;
-
-                    if (mOnTouchModeChangedListener != null) {
-                        mOnTouchModeChangedListener
-                                .onTouchModeChanged(mTouchMode);
-                    }
-                }
-            }
-        }
-    }
-
     boolean performLongPress() {
         // CHOICE_MODE_MULTIPLE_MODAL takes over long press.
         if (mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL) {
@@ -1758,18 +1683,98 @@ public class EPGView extends AbsLayoutContainer {
         }
 
         boolean handled = false;
-        final long longPressId = mAdapter.getItemId(beginTouchAt.itemSection, beginTouchAt.itemSection);
+        long longPressId = mAdapter.getItemId(beginTouchAt.itemSection, beginTouchAt.itemSection);
         if (mOnItemLongClickListener != null) {
             handled = mOnItemLongClickListener.onItemLongClick(this, beginTouchAt.view, beginTouchAt.itemSection, beginTouchAt.itemIndex, longPressId);
         }
         if (!handled) {
             mContextMenuInfo = createContextMenuInfo(beginTouchAt.view, beginTouchAt.itemSection, beginTouchAt.itemIndex, longPressId);
-            handled = super.showContextMenuForChild(this);
+            handled = showContextMenuForChild(this);
         }
         if (handled) {
             updateOnScreenCheckedViews();
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         }
+        return handled;
+    }
+
+    public void setItemChecked(int sectionIndex, int positionInSection,
+                               boolean value) {
+        if (mChoiceMode == CHOICE_MODE_NONE) {
+            return;
+        }
+
+        // Start selection mode if needed. We don't need to if we're unchecking
+        // something.
+        if (value && mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL
+                && mChoiceActionMode == null) {
+            if (mMultiChoiceModeCallback == null
+                    || !mMultiChoiceModeCallback.hasWrappedCallback()) {
+                throw new IllegalStateException(
+                        "Container: attempted to start selection mode "
+                                + "for CHOICE_MODE_MULTIPLE_MODAL but no choice mode callback was "
+                                + "supplied. Call setMultiChoiceModeListener to set a callback.");
+            }
+            mChoiceActionMode = startActionMode(mMultiChoiceModeCallback);
+        }
+
+        if (mChoiceMode == CHOICE_MODE_MULTIPLE
+                || mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL) {
+
+            setCheckedValue(sectionIndex, positionInSection, value);
+            if (mChoiceActionMode != null) {
+                long id = mAdapter.getItemId(sectionIndex, positionInSection);
+                mMultiChoiceModeCallback.onItemCheckedStateChanged(mChoiceActionMode, sectionIndex, positionInSection, id, value);
+            }
+        } else {
+            setCheckedValue(sectionIndex, positionInSection, value);
+        }
+
+        // if (!mInLayout && !mBlockLayoutRequests) {
+        // mDataChanged = true;
+        // rememberSyncState();
+        requestLayout();
+        // }
+    }
+
+    @Override
+    public boolean performItemClick(View view, int section, int position, long id) {
+        boolean handled = false;
+        boolean dispatchItemClick = true;
+        if (mChoiceMode != CHOICE_MODE_NONE) {
+            handled = true;
+            boolean checkedStateChanged = false;
+
+            if (mChoiceMode == CHOICE_MODE_MULTIPLE
+                    || mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL && mChoiceActionMode != null) {
+                boolean checked = isChecked(section, position);
+                checked = !checked;
+                setCheckedValue(section, position, checked);
+
+                if (mChoiceActionMode != null) {
+                    mMultiChoiceModeCallback.onItemCheckedStateChanged(
+                            mChoiceActionMode, section, position, id, checked);
+                    dispatchItemClick = false;
+                }
+                checkedStateChanged = true;
+            } else if (mChoiceMode == CHOICE_MODE_SINGLE) {
+                boolean checked = !isChecked(section, position);
+                if (checked) {
+                    setCheckedValue(section, position, checked);
+                }
+                checkedStateChanged = true;
+            }
+
+            if (checkedStateChanged) {
+                updateOnScreenCheckedViews();
+            }
+        }
+
+        if (dispatchItemClick) {
+
+            handled |= super.performItemClick(view, section, position, id);
+        }
+
         return handled;
     }
 
@@ -1844,20 +1849,31 @@ public class EPGView extends AbsLayoutContainer {
         void onTouchModeChanged(int touchMode);
     }
 
-    public interface MultiChoiceModeListener extends ActionMode.Callback {
-        /**
-         * Called when an item is checked or unchecked during selection mode.
-         *
-         * @param mode     The {@link ActionMode} providing the selection mode
-         * @param section  The Section of the item that was checked
-         * @param position Adapter position of the item in the section that was
-         *                 checked or unchecked
-         * @param id       Adapter ID of the item that was checked or unchecked
-         * @param checked  <code>true</code> if the item is now checked,
-         *                 <code>false</code> if the item is now unchecked.
-         */
-        public void onItemCheckedStateChanged(ActionMode mode, int section,
-                                              int position, long id, boolean checked);
+    private void scrollToFreeFlowItem(FreeFlowItem freeflowItem, boolean animate, boolean center) {
+
+        if (freeflowItem == null) {
+            return;
+        }
+
+        int newVPX = freeflowItem.frame.left - (center ? getWidth() / 2 : mLayout.getLayoutParams().channelCellWidth);
+        int newVPY = freeflowItem.frame.top - mLayout.getLayoutParams().timeLineHeight;
+
+        if (newVPX > mLayout.getContentWidth() - getMeasuredWidth())
+            newVPX = mLayout.getContentWidth() - getMeasuredWidth();
+
+        if (newVPY > mLayout.getContentHeight() - getMeasuredHeight())
+            newVPY = mLayout.getContentHeight() - getMeasuredHeight();
+
+        if (newVPY < 0) {
+            newVPY = 0;
+        }
+
+        if (animate) {
+            scroller.startScroll(viewPortX, viewPortY, newVPX - viewPortX, newVPY - viewPortY, 1000);
+            post(flingRunnable);
+        } else {
+            moveViewportBy(viewPortX - newVPX, viewPortY - newVPY, false);
+        }
     }
 
     @Override
@@ -1868,84 +1884,24 @@ public class EPGView extends AbsLayoutContainer {
         }
     }
 
-    public void setItemChecked(int sectionIndex, int positionInSection,
-                               boolean value) {
-        if (mChoiceMode == CHOICE_MODE_NONE) {
-            return;
-        }
-
-        // Start selection mode if needed. We don't need to if we're unchecking
-        // something.
-        if (value && mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL
-                && mChoiceActionMode == null) {
-            if (mMultiChoiceModeCallback == null
-                    || !mMultiChoiceModeCallback.hasWrappedCallback()) {
-                throw new IllegalStateException(
-                        "Container: attempted to start selection mode "
-                                + "for CHOICE_MODE_MULTIPLE_MODAL but no choice mode callback was "
-                                + "supplied. Call setMultiChoiceModeListener to set a callback.");
-            }
-            mChoiceActionMode = startActionMode(mMultiChoiceModeCallback);
-        }
-
-        if (mChoiceMode == CHOICE_MODE_MULTIPLE
-                || mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL) {
-
-            setCheckedValue(sectionIndex, positionInSection, value);
-            if (mChoiceActionMode != null) {
-                final long id = mAdapter.getItemId(sectionIndex, positionInSection);
-                mMultiChoiceModeCallback.onItemCheckedStateChanged(mChoiceActionMode, sectionIndex, positionInSection, id, value);
-            }
+    public boolean isNowLineVisible() {
+        FreeFlowItem nowLineFreeFlowItem = mLayout.getNowLineFreeFlowItem();
+        if (nowLineFreeFlowItem != null) {
+            return nowLineFreeFlowItem.frame.left > viewPortX && nowLineFreeFlowItem.frame.left < viewPortX + getMeasuredWidth();
         } else {
-            setCheckedValue(sectionIndex, positionInSection, value);
+            return false;
         }
 
-        // if (!mInLayout && !mBlockLayoutRequests) {
-        // mDataChanged = true;
-        // rememberSyncState();
-        requestLayout();
-        // }
     }
 
-    @Override
-    public boolean performItemClick(View view, int section, int position, long id) {
-        boolean handled = false;
-        boolean dispatchItemClick = true;
-        if (mChoiceMode != CHOICE_MODE_NONE) {
-            handled = true;
-            boolean checkedStateChanged = false;
-
-            if (mChoiceMode == CHOICE_MODE_MULTIPLE
-                    || (mChoiceMode == CHOICE_MODE_MULTIPLE_MODAL && mChoiceActionMode != null)) {
-                boolean checked = isChecked(section, position);
-                checked = !checked;
-                setCheckedValue(section, position, checked);
-
-                if (mChoiceActionMode != null) {
-                    mMultiChoiceModeCallback.onItemCheckedStateChanged(
-                            mChoiceActionMode, section, position, id, checked);
-                    dispatchItemClick = false;
-                }
-                checkedStateChanged = true;
-            } else if (mChoiceMode == CHOICE_MODE_SINGLE) {
-                boolean checked = !isChecked(section, position);
-                if (checked) {
-                    setCheckedValue(section, position, checked);
-                }
-                checkedStateChanged = true;
-            }
-
-            if (checkedStateChanged) {
-                updateOnScreenCheckedViews();
-            }
-        }
-
-        if (dispatchItemClick) {
-
-            handled |= super.performItemClick(view, section, position, id);
-        }
-
-        return handled;
+    /**
+     * Register a callback to be invoked when an item in this EPGView has
+     * been selected.
+     *
+     * @param listener The callback that will run
+     */
+    public void setmOnEPGItemSelectedListener(OnEPGItemSelectedListener listener) {
+        mOnEPGItemSelectedListener = listener;
     }
 
     private class PerformClick implements Runnable {
@@ -2049,41 +2005,28 @@ public class EPGView extends AbsLayoutContainer {
         scrollToFreeFlowItem(freeflowItem, animate, false);
     }
 
-    private void scrollToFreeFlowItem(FreeFlowItem freeflowItem, boolean animate, boolean center) {
-
-        if(freeflowItem == null) {
-            return;
-        }
-
-        int newVPX = freeflowItem.frame.left - (center ? getWidth()/2 : mLayout.getLayoutParams().channelCellWidth);
-        int newVPY = freeflowItem.frame.top - mLayout.getLayoutParams().timeLineHeight;
-
-        if (newVPX > mLayout.getContentWidth() - getMeasuredWidth())
-            newVPX = mLayout.getContentWidth() - getMeasuredWidth();
-
-        if (newVPY > mLayout.getContentHeight() - getMeasuredHeight())
-            newVPY = mLayout.getContentHeight() - getMeasuredHeight();
-
-        if(newVPY < 0) {
-            newVPY = 0;
-        }
-
-        if (animate) {
-            scroller.startScroll(viewPortX, viewPortY, (newVPX - viewPortX), (newVPY - viewPortY), 1000);
-            post(flingRunnable);
-        } else {
-            moveViewportBy((viewPortX - newVPX), (viewPortY - newVPY), false);
-        }
+    public interface MultiChoiceModeListener extends ActionMode.Callback {
+        /**
+         * Called when an item is checked or unchecked during selection mode.
+         *
+         * @param mode     The {@link ActionMode} providing the selection mode
+         * @param section  The Section of the item that was checked
+         * @param position Adapter position of the item in the section that was
+         *                 checked or unchecked
+         * @param id       Adapter ID of the item that was checked or unchecked
+         * @param checked  <code>true</code> if the item is now checked,
+         *                 <code>false</code> if the item is now unchecked.
+         */
+        void onItemCheckedStateChanged(ActionMode mode, int section,
+                                       int position, long id, boolean checked);
     }
 
-    public boolean isNowLineVisible() {
-        FreeFlowItem nowLineFreeFlowItem = mLayout.getNowLineFreeFlowItem();
-        if(nowLineFreeFlowItem != null) {
-            return nowLineFreeFlowItem.frame.left > viewPortX && nowLineFreeFlowItem.frame.left < (viewPortX + getMeasuredWidth());
-        } else {
-            return false;
-        }
+    public interface OnScrollListener {
+        int SCROLL_STATE_IDLE = 0;
+        int SCROLL_STATE_TOUCH_SCROLL = 1;
+        int SCROLL_STATE_FLING = 2;
 
+        void onScroll(EPGView container);
     }
 
     /**
@@ -2126,12 +2069,41 @@ public class EPGView extends AbsLayoutContainer {
         // TODO:
     }
 
-    public interface OnScrollListener {
-        public int SCROLL_STATE_IDLE = 0;
-        public int SCROLL_STATE_TOUCH_SCROLL = 1;
-        public int SCROLL_STATE_FLING = 2;
+    final class CheckForTap implements Runnable {
+        @Override
+        public void run() {
+            if (mTouchMode == TOUCH_MODE_DOWN) {
+                mTouchMode = TOUCH_MODE_TAP;
 
-        public void onScroll(EPGView container);
+                if (mOnTouchModeChangedListener != null) {
+                    mOnTouchModeChangedListener.onTouchModeChanged(mTouchMode);
+                }
+
+                if (beginTouchAt != null && beginTouchAt.view != null) {
+                    beginTouchAt.view.setPressed(true);
+                    // setPressed(true);
+                }
+
+                refreshDrawableState();
+                int longPressTimeout = ViewConfiguration
+                        .getLongPressTimeout();
+                boolean longClickable = isLongClickable();
+
+                if (longClickable) {
+                    if (mPendingCheckForLongPress == null) {
+                        mPendingCheckForLongPress = new CheckForLongPress();
+                    }
+                    postDelayed(mPendingCheckForLongPress, longPressTimeout);
+                } else {
+                    mTouchMode = TOUCH_MODE_DONE_WAITING;
+
+                    if (mOnTouchModeChangedListener != null) {
+                        mOnTouchModeChangedListener
+                                .onTouchModeChanged(mTouchMode);
+                    }
+                }
+            }
+        }
     }
 
     /******** DEBUGGING HELPERS *******/
@@ -2193,14 +2165,41 @@ public class EPGView extends AbsLayoutContainer {
         void onChannelItemSelected(AbsLayoutContainer parent, int channelIndex);
     }
 
-    /**
-     * Register a callback to be invoked when an item in this EPGView has
-     * been selected.
-     *
-     * @param listener
-     *            The callback that will run
-     */
-    public void setmOnEPGItemSelectedListener(OnEPGItemSelectedListener listener) {
-        this.mOnEPGItemSelectedListener = listener;
+    private class CheckForLongPress implements Runnable {
+        @Override
+        public void run() {
+            if (beginTouchAt == null) {
+                // Assuming child that was being long pressed
+                // is no longer valid
+                return;
+            }
+
+            mCheckStates.clear();
+            View child = beginTouchAt.view;
+            if (child != null) {
+                boolean handled = false;
+                // if (!mDataChanged) {
+                handled = performLongPress();
+                // }
+                if (handled) {
+                    mTouchMode = TOUCH_MODE_REST;
+
+                    if (mOnTouchModeChangedListener != null) {
+                        mOnTouchModeChangedListener
+                                .onTouchModeChanged(mTouchMode);
+                    }
+
+                    // setPressed(false);
+                    child.setPressed(false);
+                } else {
+                    mTouchMode = TOUCH_MODE_DONE_WAITING;
+
+                    if (mOnTouchModeChangedListener != null) {
+                        mOnTouchModeChangedListener
+                                .onTouchModeChanged(mTouchMode);
+                    }
+                }
+            }
+        }
     }
 }

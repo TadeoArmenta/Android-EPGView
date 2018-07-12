@@ -6,7 +6,6 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,7 +22,7 @@ public abstract class EPGAdapter<C, P> {
         sections = new ArrayList<>();
     }
 
-    public void updateDataWith(LinkedHashMap<C, List<P>> channelToProgramsMap) {
+    public void updateDataWith(Map<C, List<P>> channelToProgramsMap) {
 
         sections = new ArrayList<>(channelToProgramsMap.size());
         for (Map.Entry<C, List<P>> channelEntry : channelToProgramsMap.entrySet()) {

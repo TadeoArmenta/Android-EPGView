@@ -28,7 +28,7 @@ import java.util.Map;
 
 public abstract class AbsLayoutContainer extends ViewGroup {
 
-	protected Map<Object, FreeFlowItem> frames = null;
+	protected Map<Long, FreeFlowItem> frames = null;
 
 	protected ArrayList<FreeFlowEventListener> listeners = new ArrayList<FreeFlowEventListener>();
 
