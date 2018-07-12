@@ -1999,7 +1999,7 @@ public class EPGView extends AbsLayoutContainer {
             return;
         }
 
-        FreeFlowItem freeflowItem = mLayout.getFreeFlowItemForItem(section.getDataAtIndex(itemIndex));
+        FreeFlowItem freeflowItem = mLayout.getFreeFlowItemForItem(sectionIndex, itemIndex);
         freeflowItem = FreeFlowItem.clone(freeflowItem);
 
         scrollToFreeFlowItem(freeflowItem, animate, false);

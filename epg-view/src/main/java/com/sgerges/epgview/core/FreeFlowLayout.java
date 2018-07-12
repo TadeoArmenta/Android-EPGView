@@ -76,7 +76,7 @@ public interface FreeFlowLayout {
 	 * @param item
 	 * @return
 	 */
-	FreeFlowItem getFreeFlowItemForItem(Object item);
+	FreeFlowItem getFreeFlowItemForItem(int section, int index);
 
 	boolean horizontalScrollEnabled();
 

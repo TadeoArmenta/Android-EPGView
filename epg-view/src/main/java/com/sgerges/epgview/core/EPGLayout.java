@@ -354,8 +354,7 @@ public class EPGLayout extends FreeFlowLayoutBase {
         if (s.getDataCount() == 0)
             return 0;
 
-        Object lastFrameData = s.getDataAtIndex(s.getDataCount() - 1);
-        FreeFlowItem fd = proxies.get(lastFrameData);
+        FreeFlowItem fd = proxies.get(itemsAdapter.getItemId(sectionIndex, s.getDataCount() - 1));
         if (fd == null) {
             return 0;
         }
@@ -363,12 +362,12 @@ public class EPGLayout extends FreeFlowLayoutBase {
     }
 
     @Override
-    public FreeFlowItem getFreeFlowItemForItem(Object data) {
-        return proxies.get(data);
+    public FreeFlowItem getFreeFlowItemForItem(int section, int index) {
+        return proxies.get(itemsAdapter.getItemId(section, index));
     }
 
     public FreeFlowItem getNowLineFreeFlowItem() {
-        return proxies.get("NOW_LINE");
+        return proxies.get((long) TYPE_NOW_LINE);
     }
 
     public void forceUpdateFrame(Object data, Rect frame) {
